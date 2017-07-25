@@ -18,4 +18,5 @@ setup(
     long_description=long_description,
     license='Apache',
     maintainer="Phillip Cloud",
+    entry_points={'console_scripts': ['scourge = scourge.scourge:cli']}
 )
