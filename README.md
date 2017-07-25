@@ -8,7 +8,7 @@ Build arbitrary conda dependency graphs from source
 Here's an example of how to use `scourge`.
 
 
-### Initialization
+### Initialization: `scourge init`
 
 Right now all this does is pull down the `condaforge/linux-anvil` docker image.
 
@@ -20,7 +20,7 @@ Digest: sha256:dd53ef1792f777fa8b2abf30221bf9beb6cb6a81d158d498f0219c4d475696cd
 Status: Image is up to date for condaforge/linux-anvil:latest
 ```
 
-### `Makefile` generation
+### `Makefile` generation: `scourge gen <packages>`
 
 This writes to standard out a `Makefile` which will build your packages in
 topological order. `scourge` just generates the package name and its dependency
