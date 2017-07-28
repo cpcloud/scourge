@@ -39,7 +39,7 @@ def clone(packages):
         for future in futures.as_completed(
             executor.submit(
                 sh.git.clone,
-                'git://github.com/conda-forge/{}'.format(feedstock),
+                'https://github.com/conda-forge/{}'.format(feedstock),
             ) for feedstock in map('{}-feedstock'.format, packages)
             if not os.path.exists(feedstock)
         ):
@@ -47,6 +47,21 @@ def clone(packages):
                 future.result()
             except Exception as e:
                 raise click.ClickException(str(e))
+
+
+def get_requirements(packages):
+    with futures.ThreadPoolExecutor() as e:
+        for future in futures.as_completed(
+            e.submit(sh.conda.render, str(package / 'recipe' / 'meta.yaml'))
+            for package_name, package in packages.items()
+        ):
+            try:
+                result = future.result()
+            except Exception as e:
+                raise click.ClickException(str(e))
+            else:
+                meta = yaml.load(io.StringIO(str(result)), Loader=Loader)
+                yield meta['package']['name'], meta['requirements']
 
 
 @cli.command(help='Generate a Makefile for building packages')
@@ -57,55 +72,52 @@ def clone(packages):
     type=click.File('wt'),
 )
 @click.option(
-    '--package-dir',
+    '-d', '--feedstock-directory',
     default='.',
     type=click.Path(exists=True),
     help='Directory of feedstocks',
 )
 @click.option(
-    '--artifact-dir',
+    '-a', '--artifact-directory',
     default=os.path.join('.', 'artifacts'),
     type=click.Path(),
     help='Where to place tarballs upon building successfully',
 )
-def gen(output, package_dir, artifact_dir):
+def gen(output, feedstock_directory, artifact_directory):
     packages = {
         p.stem[:-len('-feedstock')]: p
-        for p in pathlib.Path(package_dir).glob('*-feedstock') if p.is_dir()
+        for p in pathlib.Path(
+            feedstock_directory
+        ).glob('*-feedstock') if p.is_dir()
     }
 
     graph = {package_name: set() for package_name in packages.keys()}
 
-    for package_name, package in packages.items():
-        result = io.StringIO(str(
-            sh.conda.render(
-                str(package / 'recipe' / 'meta.yaml'),
-            )
-        ))
-        meta = yaml.load(result, Loader=Loader)
-        requirements = meta['requirements']
-
+    for package_name, requirements in get_requirements(packages):
         for dep in frozenset(requirements['build'] + requirements['run']):
             raw_dep, *_ = dep.split(' ', 1)
             if raw_dep in packages:
                 graph.setdefault(package_name, set()).add(raw_dep)
 
-        os.makedirs(os.path.join(artifact_dir, package_name), exist_ok=True)
+        os.makedirs(
+            os.path.join(artifact_directory, package_name),
+            exist_ok=True,
+        )
 
-    target_template = '{}/{{}}/BUILT'.format(artifact_dir)
+    target_template = '{}/{{}}/BUILT'.format(artifact_directory)
 
     template = """
 {}/{{package_name}}/BUILT: {{deps}}
 \t{{stem}}/ci_support/run_docker_build.sh
 \tcp {{stem}}/build_artefacts/linux-64/{{package_name}}*.tar.bz2 $(dir $@)
-\ttouch $@""".format(artifact_dir)  # noqa: E501
+\ttouch $@""".format(artifact_directory)
     lines = [
         '.PHONY: all clean realclean\n',
         'all: {}\n'.format(
             ' '.join(map(target_template.format, graph.keys()))
         ),
-        'clean:\n\trm -f {}/*/BUILT\n'.format(artifact_dir),
-        'realclean:\n\trm -rf {}/*\n'.format(artifact_dir)
+        'clean:\n\trm -f {}/*/BUILT\n'.format(artifact_directory),
+        'realclean:\n\trm -rf {}/*\n'.format(artifact_directory)
     ]
     lines += [
         template.format(
