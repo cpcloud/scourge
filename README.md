@@ -40,23 +40,30 @@ build your packages in topological order.
 the sorting.
 
 ```sh
-$ scourge gen
-all: ./artifacts/pyarrow ./artifacts/parquet-cpp ./artifacts/arrow-cpp
+$ scourge gen -
+.PHONY: all clean realclean
+
+all: ./artifacts/pyarrow/BUILT ./artifacts/parquet-cpp/BUILT ./artifacts/arrow-cpp/BUILT
 
 clean:
-        rm -rf ./artifacts
+        rm -f ./artifacts/*/BUILT
 
-./artifacts/pyarrow: ./artifacts/arrow-cpp ./artifacts/parquet-cpp
+realclean:
+        rm -rf ./artifacts/*
+
+
+./artifacts/pyarrow/BUILT: ./artifacts/parquet-cpp/BUILT ./artifacts/arrow-cpp/BUILT
         pyarrow-feedstock/ci_support/run_docker_build.sh
-        cp $(wildcard pyarrow-feedstock/build_artefacts/pyarrow*.tar.bz2) $@
+        cp pyarrow-feedstock/build_artefacts/linux-64/pyarrow*.tar.bz2 $(dir $@)
+        touch $@
 
-
-./artifacts/parquet-cpp: ./artifacts/arrow-cpp
+./artifacts/parquet-cpp/BUILT: ./artifacts/arrow-cpp/BUILT
         parquet-cpp-feedstock/ci_support/run_docker_build.sh
-        cp $(wildcard parquet-cpp-feedstock/build_artefacts/parquet-cpp*.tar.bz2) $@
+        cp parquet-cpp-feedstock/build_artefacts/linux-64/parquet-cpp*.tar.bz2 $(dir $@)
+        touch $@
 
-
-./artifacts/arrow-cpp: 
+./artifacts/arrow-cpp/BUILT:
         arrow-cpp-feedstock/ci_support/run_docker_build.sh
-        cp $(wildcard arrow-cpp-feedstock/build_artefacts/arrow-cpp*.tar.bz2) $@
+        cp arrow-cpp-feedstock/build_artefacts/linux-64/arrow-cpp*.tar.bz2 $(dir $@)
+        touch $@
 ```
