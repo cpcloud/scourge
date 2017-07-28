@@ -109,7 +109,7 @@ def gen(output, feedstock_directory, artifact_directory):
     template = """
 {}/{{package_name}}/BUILT: {{deps}}
 \t{{stem}}/ci_support/run_docker_build.sh
-\tcp {{stem}}/build_artefacts/linux-64/{{package_name}}*.tar.bz2 $(dir $@)
+\tcp -f {{stem}}/build_artefacts/linux-64/{{package_name}}*.tar.bz2 $(dir $@)
 \ttouch $@""".format(artifact_directory)
     lines = [
         '.PHONY: all clean realclean\n',
