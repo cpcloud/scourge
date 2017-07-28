@@ -51,19 +51,18 @@ clean:
 realclean:
         rm -rf ./artifacts/*
 
-
 ./artifacts/pyarrow/BUILT: ./artifacts/parquet-cpp/BUILT ./artifacts/arrow-cpp/BUILT
         pyarrow-feedstock/ci_support/run_docker_build.sh
-        cp pyarrow-feedstock/build_artefacts/linux-64/pyarrow*.tar.bz2 $(dir $@)
+        cp -f pyarrow-feedstock/build_artefacts/linux-64/pyarrow*.tar.bz2 $(dir $@)
         touch $@
 
 ./artifacts/parquet-cpp/BUILT: ./artifacts/arrow-cpp/BUILT
         parquet-cpp-feedstock/ci_support/run_docker_build.sh
-        cp parquet-cpp-feedstock/build_artefacts/linux-64/parquet-cpp*.tar.bz2 $(dir $@)
+        cp -f parquet-cpp-feedstock/build_artefacts/linux-64/parquet-cpp*.tar.bz2 $(dir $@)
         touch $@
 
 ./artifacts/arrow-cpp/BUILT:
         arrow-cpp-feedstock/ci_support/run_docker_build.sh
-        cp arrow-cpp-feedstock/build_artefacts/linux-64/arrow-cpp*.tar.bz2 $(dir $@)
+        cp -f arrow-cpp-feedstock/build_artefacts/linux-64/arrow-cpp*.tar.bz2 $(dir $@)
         touch $@
 ```
