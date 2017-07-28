@@ -92,18 +92,20 @@ def gen(output, package_dir, artifact_dir):
 
         os.makedirs(os.path.join(artifact_dir, package_name), exist_ok=True)
 
-    target_template = '{}/{{}}'.format(artifact_dir)
+    target_template = '{}/{{}}/BUILT'.format(artifact_dir)
 
     template = """
-{}/{{package_name}}: {{deps}}
+{}/{{package_name}}/BUILT: {{deps}}
 \t{{stem}}/ci_support/run_docker_build.sh
-\tcp $(wildcard {{stem}}/build_artefacts/{{package_name}}*.tar.bz2) $@
-""".format(artifact_dir)
+\tcp {{stem}}/build_artefacts/linux-64/{{package_name}}*.tar.bz2 $(dir $@)
+\ttouch $@""".format(artifact_dir)  # noqa: E501
     lines = [
+        '.PHONY: all clean realclean\n',
         'all: {}\n'.format(
             ' '.join(map(target_template.format, graph.keys()))
         ),
-        'clean:\n\trm -rf {}'.format(artifact_dir)
+        'clean:\n\trm -f {}/*/BUILT\n'.format(artifact_dir),
+        'realclean:\n\trm -rf {}/*\n'.format(artifact_dir)
     ]
     lines += [
         template.format(
@@ -113,4 +115,4 @@ def gen(output, package_dir, artifact_dir):
         )
         for node, edges in graph.items()
     ]
-    output.write('\n'.join(lines))
+    output.write('\n'.join(lines) + '\n')
