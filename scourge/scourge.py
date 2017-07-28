@@ -117,7 +117,7 @@ def gen(output, feedstock_directory, artifact_directory):
             ' '.join(map(target_template.format, graph.keys()))
         ),
         'clean:\n\trm -f {}/*/BUILT\n'.format(artifact_directory),
-        'realclean:\n\trm -rf {}/*\n'.format(artifact_directory)
+        'realclean:\n\trm -rf {}/*'.format(artifact_directory)
     ]
     lines += [
         template.format(
