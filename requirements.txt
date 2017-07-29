@@ -1,4 +1,2 @@
 click
-pyyaml
 sh >= 1.12
-toolz
