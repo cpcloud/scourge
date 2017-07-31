@@ -1,2 +1,6 @@
 click
-sh >= 1.12
+sh
+toolz
+pyyaml
+tqdm
+decorating
