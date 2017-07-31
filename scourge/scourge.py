@@ -323,7 +323,7 @@ def construct_environment_variables(ctx, param, environment):
 @click.option(
     '-j', '--jobs',
     type=int,
-    default=cpu_count() // 2,
+    default=max(1, cpu_count() // 2),
     help='Number of workers to use for building',
 )
 def build(constraints, use_local, jobs, environment):
