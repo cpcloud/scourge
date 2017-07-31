@@ -21,7 +21,7 @@ Using default tag: latest
 latest: Pulling from condaforge/linux-anvil    
 Digest: sha256:dd53ef1792f777fa8b2abf30221bf9beb6cb6a81d158d498f0219c4d475696cd                
 Status: Image is up to date for condaforge/linux-anvil:latest                                  
-Cloning feedstocks: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3/3 [00:00<00:00, 11.65it/s]
+Cloning feedstocks: 100%|█████████████████████████████████████| 3/3 [00:00<00:00, 11.65it/s]
 ```
 
 ```sh
