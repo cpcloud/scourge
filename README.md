@@ -10,59 +10,59 @@ Here's an example of how to use `scourge`.
 
 ### 1. Initialization: `scourge init`
 
-Right now all this does is pull down the `condaforge/linux-anvil` docker image.
+This clones the latest ``condaforge/linux-anvil`` docker image and sets up
+feedstocks provided at the command line.
+
+The ``@`` allows arbitrary git ref syntax for each package.
 
 ```sh
-$ scourge init
-Using default tag: latest
-latest: Pulling from condaforge/linux-anvil
-Digest: sha256:dd53ef1792f777fa8b2abf30221bf9beb6cb6a81d158d498f0219c4d475696cd
-Status: Image is up to date for condaforge/linux-anvil:latest
+$ scourge init arrow-cpp@master parquet-cpp@master pyarrow@master                            
+Using default tag: latest                      
+latest: Pulling from condaforge/linux-anvil    
+Digest: sha256:dd53ef1792f777fa8b2abf30221bf9beb6cb6a81d158d498f0219c4d475696cd                
+Status: Image is up to date for condaforge/linux-anvil:latest                                  
+Cloning feedstocks: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 3/3 [00:00<00:00, 11.65it/s]
 ```
-
-### 2. Feedstock clone: `scourge clone <packages>`
-
-This step clones each package's feedstock from the `conda-forge` GitHub
-repository into the current working directory.
 
 ```sh
-$ scourge clone parquet-cpp arrow-cpp pyarrow
+$ scourge init -h
+Usage: scourge init [OPTIONS] [PACKAGE_SPECIFICATIONS]...
+
+  Pull in the conda forge docker image and clone feedstocks.
+
+Options:
+  -i, --image TEXT               The Docker image to use to build packages.
+  -a, --artifact-directory PATH  The location to place tarballs upon a
+                                 successful build.
+  -h, --help                     Show this message and exit.
 ```
 
-There's no output if cloning is successful.
+### 2. Package builds: `scourge build`
 
-### 3. `Makefile` generation: `scourge gen`
+This step fires up a bunch of docker containers--one for each build--and writes
+the build log for each one to a file in the ``$PWD/logs`` directory.
 
-This writes to standard out (or a file name) a `Makefile` which will
-build your packages in topological order.
-
-`scourge` generates the package name and its dependency list and `make` does
-the sorting.
 
 ```sh
-$ scourge gen -
-.PHONY: all clean realclean
+$ scourge build -h
+Usage: scourge build [OPTIONS]
 
-all: ./artifacts/pyarrow/BUILT ./artifacts/parquet-cpp/BUILT ./artifacts/arrow-cpp/BUILT
+  Build conda forge packages in parallel
 
-clean:
-        rm -f ./artifacts/*/BUILT
-
-realclean:
-        rm -rf ./artifacts/*
-
-./artifacts/pyarrow/BUILT: ./artifacts/parquet-cpp/BUILT ./artifacts/arrow-cpp/BUILT
-        pyarrow-feedstock/ci_support/run_docker_build.sh
-        cp -f pyarrow-feedstock/build_artefacts/linux-64/pyarrow*.tar.bz2 $(dir $@)
-        touch $@
-
-./artifacts/parquet-cpp/BUILT: ./artifacts/arrow-cpp/BUILT
-        parquet-cpp-feedstock/ci_support/run_docker_build.sh
-        cp -f parquet-cpp-feedstock/build_artefacts/linux-64/parquet-cpp*.tar.bz2 $(dir $@)
-        touch $@
-
-./artifacts/arrow-cpp/BUILT:
-        arrow-cpp-feedstock/ci_support/run_docker_build.sh
-        cp -f arrow-cpp-feedstock/build_artefacts/linux-64/arrow-cpp*.tar.bz2 $(dir $@)
-        touch $@
+Options:
+  -c, --constraints TEXT  Additional special software constraints - e.g.,
+                          numpy/python.
+  -e, --environment TEXT  Additional environment variables to pass to builds
+  -L, --use-local         Use builds that exist locally if possible. Note that
+                          this may slow down build times because packages must
+                          be built in topological order with this option set.
+  -j, --jobs INTEGER      Number of workers to use for building
+  -h, --help              Show this message and exit.
 ```
+
+**NOTE:** The ``--use-local`` flag is not yet implemented.
+
+
+### * `scourge clean`
+
+This isn't necessary, but can be useful if you want to start from scratch.
