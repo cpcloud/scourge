@@ -18,6 +18,8 @@ import toolz
 import yaml
 import tqdm
 import decorating
+import networkx as nx
+
 from github import Github
 
 import conda.api
@@ -132,7 +134,6 @@ def construct_dependency_subgraph(metadata):
     return graph
 
 
-@memoize(key=lambda args, kwargs: (args[0].full_name, args[1]))
 def get_sha(repo, ref):
     return repo.get_git_ref('heads/{}'.format(ref)).object.sha
 
@@ -273,6 +274,15 @@ def init(package_specifications, image, artifact_directory):
     with open('.metadata', mode='wb') as f:
         pickle.dump(package_metadata, f)
 
+    nx_graph = nx.DiGraph()
+    for node, edges in graph.items():
+        for edge in edges:
+            nx_graph.add_edge(edge, node)
+    ordering = nx.topological_sort(nx_graph)
+
+    with open('.ordering', mode='wb') as f:
+        pickle.dump(ordering, f)
+
 
 def tarballs(build_artifacts):
     pattern = os.path.join(build_artifacts, 'linux-64', '*.tar.bz2')
@@ -332,7 +342,7 @@ SCRIPT = '\n'.join([
     'source run_conda_forge_build_setup',
     (
         'CONDA_PY={python} CONDA_NPY={numpy} '
-        'conda build {use_local} /recipes/{package} '
+        'conda build --use-local /recipes/{package} '
         '--output-folder /build_artifacts --quiet || exit 1'
     ),
 ])
@@ -377,20 +387,12 @@ def construct_environment_variables(ctx, param, environment):
     help='Additional environment variables to pass to builds',
 )
 @click.option(
-    '-L', '--use-local', is_flag=True,
-    help=(
-        'Use builds that exist locally if possible. '
-        'Note that this may slow down build times because packages must be '
-        'built in topological order with this option set.'
-    )
-)
-@click.option(
     '-j', '--jobs',
     type=int,
     default=max(1, cpu_count() // 2),
     help='Number of workers to use for building',
 )
-def build(constraints, use_local, jobs, environment):
+def build(constraints, jobs, environment):
     with open('.metadata', mode='rb') as f:
         metadata = pickle.load(f)
 
@@ -456,7 +458,6 @@ def build(constraints, use_local, jobs, environment):
             package=package,
             python=constraints.get('python', '').replace('.', ''),
             numpy=constraints.get('numpy', '').replace('.', ''),
-            use_local='--use-local' if use_local else '',
         )
         for package, matrix in matrices.items()
         for constraints in map(dict, filter(None, matrix))
@@ -479,27 +480,31 @@ def build(constraints, use_local, jobs, environment):
         '-e', 'HOST_USER_ID={:d}'.format(os.getuid()),
     )
 
-    tasks = [
-        sh.docker.run.bake(
-            *functools.reduce(
-                lambda args, var: args + ('-e', var),
-                environment.get(package, ()),
-                args,
-            ),
+    tasks = {package: [] for (package, _, _), _ in scripts}
+
+    for (package, python, numpy), script in scripts.items():
+        task_args = functools.reduce(
+            lambda args, var: args + ('-e', var),
+            environment.get(package, ()),
+            args,
+        )
+        log_path = os.path.join(
+            'logs', '{package}-py{python}-np{numpy}.txt'.format(
+                package=package,
+                python=python or '_none',
+                numpy=numpy or '_none',
+            )
+        )
+        task = sh.docker.run.bake(
+            *task_args,
             interactive=True,
             rm=True,
             _in=script,
-            _out=os.path.join(
-                'logs', '{package}-py{python}-np{numpy}.txt'.format(
-                    package=package,
-                    python=python or '_none',
-                    numpy=numpy or '_none',
-                )
-            ),
-        ) for (package, python, numpy), script in scripts.items()
-    ]
+            _out=log_path,
+        )
+        tasks[package].append(task)
 
-    ntasks = len(tasks)
+    ntasks = sum(map(len, tasks.values()))
     built = itertools.count()
     first = next(built)
     format_string = 'Built {{:{padding}d}}/{:{padding}d} packages'
@@ -511,21 +516,28 @@ def build(constraints, use_local, jobs, environment):
         formatter,
         built,
     )
-    futures = []
 
-    with thread_pool(tasks, max_workers=jobs) as executor:
-        for task in tasks:
-            future = executor.submit(task, 'condaforge/linux-anvil', 'bash')
-            future.add_done_callback(update_when_done)
-            futures.append(future)
+    with open('.ordering', mode='rb') as f:
+        ordering = pickle.load(f)
 
-        with animation:
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                except sh.ErrorReturnCode as e:
-                    click.get_binary_stream('stderr').write(e.stderr)
-                    raise SystemExit(e.exit_code)
+    for package in ordering:  # TODO: parallelize on special versions
+        futures = []
+
+        with thread_pool(tasks, max_workers=jobs) as executor:
+            for task in tasks[package]:
+                future = executor.submit(
+                    task, 'condaforge/linux-anvil', 'bash'
+                )
+                future.add_done_callback(update_when_done)
+                futures.append(future)
+
+            with animation:
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except sh.ErrorReturnCode as e:
+                        click.get_binary_stream('stderr').write(e.stderr)
+                        raise SystemExit(e.exit_code)
 
     built_packages = [
         tarball for tarball in glob.glob(
