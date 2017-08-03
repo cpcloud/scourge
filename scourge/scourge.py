@@ -113,7 +113,7 @@ def construct_dependency_subgraph(metadata):
     return graph
 
 
-@cli.command('Get the sha of a GitHub repo ref without using git locally')
+@cli.command(help='Get the sha of a GitHub repo ref without using git locally')
 @click.argument('repo')
 @click.argument('ref')
 def sha(repo, ref):
