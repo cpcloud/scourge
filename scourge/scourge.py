@@ -6,6 +6,7 @@ import itertools
 import os
 import pickle
 import shutil
+import tempfile
 import threading
 import heapq
 
@@ -22,11 +23,19 @@ import decorating
 
 import conda.api
 
+from diskcache import Cache
+
 from conda_build.metadata import MetaData
 
 from conda.resolve import MatchSpec
 
 from conda_build_all.version_matrix import special_case_version_matrix
+
+
+memoize = functools.partial(
+    toolz.memoize,
+    cache=Cache(os.path.join(tempfile.gettempdir(), 'scourge'))
+)
 
 
 @contextlib.contextmanager
@@ -80,7 +89,7 @@ def modify_metadata(meta, version, deps_to_build):
     raw_tag = get_latestrel(repo, sha=False)
     simple_tag = raw_tag.rsplit('-', 1)[-1].replace('v', '')
     meta.meta['package']['version'] = simple_tag
-    meta.meta['build']['number'] = get_count(repo, simple_tag, 'master')
+    meta.meta['build']['number'] = get_count(repo, raw_tag, 'master')
     meta.meta['source'] = {
         'git_url': meta.get_value('about/home'),
         'git_rev': version,
@@ -128,6 +137,7 @@ def sha(repo, ref):
     click.echo(js['object']['sha'])
 
 
+@memoize
 def get_count(repo, tag, ref):
     uri = 'https://api.github.com/repos/{}/compare/{}...{}'.format(
         repo, tag, ref
@@ -145,6 +155,7 @@ def count(repo, tag, ref):
     click.echo(get_count(repo, tag, ref))
 
 
+@memoize
 def tag_sort_key(repo, pair):
     _, sha = pair
     uri = 'https://api.github.com/repos/{}/git/commits/{}'.format(repo, sha)
@@ -153,6 +164,7 @@ def tag_sort_key(repo, pair):
     return js['committer']['date']
 
 
+@memoize
 def get_latestrel(repo, sha):
     uri = 'https://api.github.com/repos/{}/tags'.format(repo)
     resp = requests.get(uri)
