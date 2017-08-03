@@ -132,11 +132,16 @@ def construct_dependency_subgraph(metadata):
     return graph
 
 
+@memoize(key=lambda args, kwargs: (args[0].full_name, args[1]))
+def get_sha(repo, ref):
+    return repo.get_git_ref('heads/{}'.format(ref)).object.sha
+
+
 @cli.command(help='Get the sha of a GitHub repo ref without using git locally')
 @click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
 @click.argument('ref')
 def sha(repo, ref):
-    return repo.get_git_ref('heads/{}'.format(ref)).object.sha
+    click.echo(get_sha(repo, ref))
 
 
 @memoize(key=lambda args, kwargs: (args[0].full_name, args[1], args[2]))
