@@ -342,7 +342,7 @@ SCRIPT = '\n'.join([
     'source run_conda_forge_build_setup',
     (
         'CONDA_PY={python} CONDA_NPY={numpy} '
-        'conda build --use-local /recipes/{package} '
+        'conda build /recipes/{package} --channel file:///build_artifacts '
         '--output-folder /build_artifacts --quiet || exit 1'
     ),
 ])
