@@ -120,7 +120,7 @@ def sha(repo, ref):
     uri = 'https://api.github.com/repos/{}/git/refs/heads/{}'.format(repo, ref)
     req = requests.get(uri)
     js = req.json()
-    return js['object']['sha']
+    click.echo(js['object']['sha'])
 
 
 @cli.command(help='Pull in the conda forge docker image and clone feedstocks.')
