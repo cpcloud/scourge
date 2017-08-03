@@ -14,6 +14,7 @@ import click
 import sh
 import toolz
 import yaml
+import requests
 
 import tqdm
 import decorating
@@ -73,9 +74,8 @@ def modify_metadata(meta, version, deps_to_build):
     if version is None:
         return meta
 
-    meta.meta['package']['version'] = '{}.{}'.format(
-        meta.meta['package']['version'], version
-    )
+    meta.meta['package']['version'] = "{{ environ.get('GIT_DESCRIBE_TAG', '').replace('v', '') }}"  # noqa: E501
+    meta.meta['build']['number'] = "{{ environ.get('GIT_DESCRIBE_NUMBER', 0) }}"  # noqa: E501
     meta.meta['source'] = {
         'git_url': meta.get_value('about/home'),
         'git_rev': version,
@@ -111,6 +111,16 @@ def construct_dependency_subgraph(metadata):
             if dep_name in graph and dep_name != package:
                 graph[package].add(dep_name)
     return graph
+
+
+@cli.command('Get the sha of a GitHub repo ref without using git locally')
+@click.argument('repo')
+@click.argument('ref')
+def sha(repo, ref):
+    uri = 'https://api.github.com/repos/{}/git/refs/heads/{}'.format(repo, ref)
+    req = requests.get(uri)
+    js = req.json()
+    return js['object']['sha']
 
 
 @cli.command(help='Pull in the conda forge docker image and clone feedstocks.')
