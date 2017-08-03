@@ -419,7 +419,7 @@ def build(constraints, use_local, jobs, environment):
         sh.docker.run.bake(
             *functools.reduce(
                 lambda args, var: args + ('-e', var),
-                environment[package],
+                environment.get(package, ()),
                 args,
             ),
             interactive=True,
