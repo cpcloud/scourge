@@ -1,6 +1,7 @@
 click
-sh
+sh >= 1.12
 toolz
 pyyaml
 tqdm
 decorating
+requests
