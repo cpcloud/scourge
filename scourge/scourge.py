@@ -7,6 +7,7 @@ import os
 import pickle
 import shutil
 import threading
+import heapq
 
 from multiprocessing import cpu_count
 
@@ -74,8 +75,12 @@ def modify_metadata(meta, version, deps_to_build):
     if version is None:
         return meta
 
-    meta.meta['package']['version'] = "{{ environ.get('GIT_DESCRIBE_TAG', '').replace('v', '') }}"  # noqa: E501
-    meta.meta['build']['number'] = "{{ environ.get('GIT_DESCRIBE_NUMBER', 0) }}"  # noqa: E501
+    *_, owner, name = meta.get_value('about/home').rsplit('/', 2)
+    repo = '{}/{}'.format(owner, name)
+    raw_tag = get_latestrel(repo, sha=False)
+    simple_tag = raw_tag.rsplit('-', 1)[-1].replace('v', '')
+    meta.meta['package']['version'] = simple_tag
+    meta.meta['build']['number'] = get_count(repo, simple_tag, 'master')
     meta.meta['source'] = {
         'git_url': meta.get_value('about/home'),
         'git_rev': version,
@@ -118,9 +123,51 @@ def construct_dependency_subgraph(metadata):
 @click.argument('ref')
 def sha(repo, ref):
     uri = 'https://api.github.com/repos/{}/git/refs/heads/{}'.format(repo, ref)
-    req = requests.get(uri)
-    js = req.json()
+    resp = requests.get(uri)
+    js = resp.json()
     click.echo(js['object']['sha'])
+
+
+def get_count(repo, tag, ref):
+    uri = 'https://api.github.com/repos/{}/compare/{}...{}'.format(
+        repo, tag, ref
+    )
+    resp = requests.get(uri)
+    js = resp.json()
+    return int(js['total_commits'])
+
+
+@cli.command(help='Number of commits between ref and tag')
+@click.argument('repo')
+@click.argument('tag')
+@click.argument('ref', required=False, default='master')
+def count(repo, tag, ref):
+    click.echo(get_count(repo, tag, ref))
+
+
+def tag_sort_key(repo, pair):
+    _, sha = pair
+    uri = 'https://api.github.com/repos/{}/git/commits/{}'.format(repo, sha)
+    resp = requests.get(uri)
+    js = resp.json()
+    return js['committer']['date']
+
+
+def get_latestrel(repo, sha):
+    uri = 'https://api.github.com/repos/{}/tags'.format(repo)
+    resp = requests.get(uri)
+    js = resp.json()
+    key = functools.partial(tag_sort_key, repo)
+    tags = [(rel['name'], rel['commit']['sha']) for rel in js]
+    (name, commit), = heapq.nlargest(1, tags, key=key)
+    return commit if sha else name
+
+
+@cli.command(help='Latest release')
+@click.argument('repo')
+@click.option('-s', '--sha', is_flag=True)
+def latestrel(repo, sha):
+    click.echo(get_latestrel(repo, sha))
 
 
 @cli.command(help='Pull in the conda forge docker image and clone feedstocks.')
