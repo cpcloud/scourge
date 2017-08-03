@@ -16,10 +16,9 @@ import click
 import sh
 import toolz
 import yaml
-import requests
-
 import tqdm
 import decorating
+from github import Github
 
 import conda.api
 
@@ -35,6 +34,12 @@ from conda_build_all.version_matrix import special_case_version_matrix
 memoize = functools.partial(
     toolz.memoize,
     cache=Cache(os.path.join(tempfile.gettempdir(), 'scourge'))
+)
+
+
+GH = Github(
+    os.environ.get('GITHUB_USER', None),
+    os.environ.get('GITHUB_ACCESS_TOKEN', None)
 )
 
 
@@ -85,7 +90,7 @@ def modify_metadata(meta, version, deps_to_build):
         return meta
 
     *_, owner, name = meta.get_value('about/home').rsplit('/', 2)
-    repo = '{}/{}'.format(owner, name)
+    repo = GH.get_repo('{}/{}'.format(owner, name))
     raw_tag = get_latestrel(repo, sha=False)
     simple_tag = raw_tag.rsplit('-', 1)[-1].replace('v', '')
     meta.meta['package']['version'] = simple_tag
@@ -128,55 +133,40 @@ def construct_dependency_subgraph(metadata):
 
 
 @cli.command(help='Get the sha of a GitHub repo ref without using git locally')
-@click.argument('repo')
+@click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
 @click.argument('ref')
 def sha(repo, ref):
-    uri = 'https://api.github.com/repos/{}/git/refs/heads/{}'.format(repo, ref)
-    resp = requests.get(uri)
-    js = resp.json()
-    click.echo(js['object']['sha'])
+    return repo.get_git_ref('heads/{}'.format(ref)).object.sha
 
 
-@memoize
+@memoize(key=lambda args, kwargs: (args[0].full_name, args[1], args[2]))
 def get_count(repo, tag, ref):
-    uri = 'https://api.github.com/repos/{}/compare/{}...{}'.format(
-        repo, tag, ref
-    )
-    resp = requests.get(uri)
-    js = resp.json()
-    return int(js['total_commits'])
+    return repo.compare(tag, ref).total_commits
 
 
 @cli.command(help='Number of commits between ref and tag')
-@click.argument('repo')
+@click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
 @click.argument('tag')
 @click.argument('ref', required=False, default='master')
 def count(repo, tag, ref):
     click.echo(get_count(repo, tag, ref))
 
 
-@memoize
+@memoize(key=lambda args, kwargs: (args[0].full_name, args[1][0], args[1][1]))
 def tag_sort_key(repo, pair):
     _, sha = pair
-    uri = 'https://api.github.com/repos/{}/git/commits/{}'.format(repo, sha)
-    resp = requests.get(uri)
-    js = resp.json()
-    return js['committer']['date']
+    return repo.get_commit(sha).commit.committer.date
 
 
-@memoize
 def get_latestrel(repo, sha):
-    uri = 'https://api.github.com/repos/{}/tags'.format(repo)
-    resp = requests.get(uri)
-    js = resp.json()
     key = functools.partial(tag_sort_key, repo)
-    tags = [(rel['name'], rel['commit']['sha']) for rel in js]
+    tags = [(rel.name, rel.commit.sha) for rel in repo.get_tags()]
     (name, commit), = heapq.nlargest(1, tags, key=key)
     return commit if sha else name
 
 
 @cli.command(help='Latest release')
-@click.argument('repo')
+@click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
 @click.option('-s', '--sha', is_flag=True)
 def latestrel(repo, sha):
     click.echo(get_latestrel(repo, sha))
