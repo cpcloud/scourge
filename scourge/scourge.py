@@ -94,9 +94,11 @@ def modify_metadata(meta, version, deps_to_build):
     *_, owner, name = meta.get_value('about/home').rsplit('/', 2)
     repo = GH.get_repo('{}/{}'.format(owner, name))
     raw_tag = get_latestrel(repo, sha=False)
+    commit_count = get_count(repo, raw_tag, get_sha(repo, 'master'))
     simple_tag = raw_tag.rsplit('-', 1)[-1].replace('v', '')
-    meta.meta['package']['version'] = simple_tag
-    meta.meta['build']['number'] = get_count(repo, raw_tag, 'master')
+    meta.meta['package']['version'] = '{}+{}.nightly'.format(
+        simple_tag, commit_count
+    )
     meta.meta['source'] = {
         'git_url': meta.get_value('about/home'),
         'git_rev': version,
@@ -146,19 +148,19 @@ def sha(repo, ref):
 
 
 @memoize(key=lambda args, kwargs: (args[0].full_name, args[1], args[2]))
-def get_count(repo, tag, ref):
-    return repo.compare(tag, ref).total_commits
+def get_count(repo, tag, sha):
+    return repo.compare(tag, sha).total_commits
 
 
-@cli.command(help='Number of commits between ref and tag')
+@cli.command(help='Number of commits between tag and ref')
 @click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
 @click.argument('tag')
 @click.argument('ref', required=False, default='master')
 def count(repo, tag, ref):
-    click.echo(get_count(repo, tag, ref))
+    click.echo(get_count(repo, tag, get_sha(repo, ref)))
 
 
-@memoize(key=lambda args, kwargs: (args[0].full_name, args[1][0], args[1][1]))
+@memoize(key=lambda args, kwargs: (args[0].full_name, args[1][1]))
 def tag_sort_key(repo, pair):
     _, sha = pair
     return repo.get_commit(sha).commit.committer.date
@@ -173,7 +175,7 @@ def get_latestrel(repo, sha):
 
 @cli.command(help='Latest release')
 @click.argument('repo', callback=lambda ctx, param, value: GH.get_repo(value))
-@click.option('-s', '--sha', is_flag=True)
+@click.option('-s/-n', '--sha/--name')
 def latestrel(repo, sha):
     click.echo(get_latestrel(repo, sha))
 
@@ -501,6 +503,7 @@ def build(constraints, jobs, environment):
             rm=True,
             _in=script,
             _out=log_path,
+            _err_to_out=True,
         )
         tasks[package].append(task)
 
@@ -538,20 +541,3 @@ def build(constraints, jobs, environment):
                     except sh.ErrorReturnCode as e:
                         click.get_binary_stream('stderr').write(e.stderr)
                         raise SystemExit(e.exit_code)
-
-    built_packages = [
-        tarball for tarball in glob.glob(
-            os.path.join(build_artifacts, 'linux-64', '*.tar.bz2')
-        ) if not os.path.basename(tarball).startswith('repodata')
-    ]
-
-    if not built_packages:
-        raise click.ClickException(
-            'No packages found in {}'.format(build_artifacts)
-        )
-
-    for package in tqdm.tqdm(built_packages, desc='Copying packages'):
-        shutil.copyfile(
-            package,
-            os.path.join(artifact_directory, os.path.basename(package)),
-        )
