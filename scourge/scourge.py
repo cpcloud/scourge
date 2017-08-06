@@ -235,11 +235,8 @@ def init(package_specifications, image, artifact_directory):
     recipes_directory = os.path.join('.', 'recipes')
     shutil.rmtree(recipes_directory, ignore_errors=True)
 
-    build_artifacts = os.path.join(artifact_directory, 'build_artifacts')
-
     os.makedirs(recipes_directory, exist_ok=True)
     os.makedirs(artifact_directory, exist_ok=True)
-    os.makedirs(build_artifacts, exist_ok=True)
 
     recipe_paths = []
 
@@ -287,12 +284,24 @@ def init(package_specifications, image, artifact_directory):
         pickle.dump(ordering, f)
 
 
-def tarballs(build_artifacts):
-    pattern = os.path.join(build_artifacts, 'linux-64', '*.tar.bz2')
+def get_tarballs(artifacts):
+    pattern = os.path.join(artifacts, 'linux-64', '*.tar.bz2')
     return [
         tarball for tarball in glob.glob(pattern)
         if not os.path.basename(tarball).startswith('repodata')
     ]
+
+
+@cli.command(help='List tarballs')
+@click.argument(
+    'artifact_directory',
+    required=False,
+    default=os.path.join('.', 'artifacts')
+)
+def tarballs(artifact_directory):
+    result = get_tarballs(artifact_directory)
+    if result:
+        click.echo('\n'.join(result))
 
 
 @cli.command(help='Remove feedstocks and generated files')
@@ -301,21 +310,19 @@ def clean():
         with open('.artifactdir', mode='rt') as f:
             artifact_directory = f.read().strip()
 
-        build_artifacts = os.path.join(artifact_directory, 'build_artifacts')
-
-        if glob.glob(os.path.join(build_artifacts, '*')):
+        if glob.glob(os.path.join(artifact_directory, '*')):
             try:
                 sh.docker.run(
                     '-a', 'stdin',
                     '-a', 'stdout',
                     '-a', 'stderr',
-                    '-v', '{}:/build_artifacts'.format(build_artifacts),
+                    '-v', '{}:/artifacts'.format(artifact_directory),
                     '-i',
                     '--rm',
                     '-e', 'HOST_USER_ID={:d}'.format(os.getuid()),
                     'condaforge/linux-anvil',
                     'bash',
-                    _in='rm -rf /build_artifacts/*',
+                    _in='rm -rf /artifacts/*',
                 )
             except sh.ErrorReturnCode as e:
                 click.get_binary_stream('stderr').write(e.stderr)
@@ -345,8 +352,8 @@ SCRIPT = '\n'.join([
     'source run_conda_forge_build_setup',
     (
         'CONDA_PY={python} CONDA_NPY={numpy} '
-        'conda build /recipes/{package} --channel file:///build_artifacts '
-        '--output-folder /build_artifacts --quiet || exit 1'
+        'conda build /recipes/{package} --channel file:///artifacts '
+        '--output-folder /artifacts --quiet || exit 1'
     ),
 ])
 
@@ -444,8 +451,6 @@ def build(constraints, jobs, environment):
     with open('.artifactdir', mode='rt') as f:
         artifact_directory = f.read().strip()
 
-    build_artifacts = os.path.join(artifact_directory, 'build_artifacts')
-
     with animated('Constraining special versions (e.g., numpy and python)'):
         with process_pool(metadata) as executor:
             results = executor.map(get_version_matrix, metadata.values())
@@ -474,8 +479,8 @@ def build(constraints, jobs, environment):
         '-a', 'stdin',
         '-a', 'stdout',
         '-a', 'stderr',
-        '-v', '{}:/build_artifacts'.format(
-            os.path.abspath(build_artifacts)
+        '-v', '{}:/artifacts'.format(
+            os.path.abspath(artifact_directory)
         ),
         '-v', '{}:/recipes'.format(os.path.abspath(recipes_directory)),
         '--dns', '8.8.8.8',
