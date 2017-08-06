@@ -480,7 +480,7 @@ def build(constraints, jobs, environment):
         '-e', 'HOST_USER_ID={:d}'.format(os.getuid()),
     )
 
-    tasks = {package: [] for package, _, _ in scripts.keys()}
+    tasks = {package: [] for package in matrices.keys()}
 
     for (package, python, numpy), script in scripts.items():
         task_args = functools.reduce(
