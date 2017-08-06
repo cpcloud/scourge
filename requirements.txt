@@ -6,3 +6,4 @@ tqdm
 decorating
 pygithub
 diskcache
+networkx
