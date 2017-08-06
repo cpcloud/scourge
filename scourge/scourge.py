@@ -460,7 +460,7 @@ def build(constraints, jobs, environment):
             numpy=constraints.get('numpy', '').replace('.', ''),
         )
         for package, matrix in matrices.items()
-        for constraints in map(dict, filter(None, matrix))
+        for constraints in map(dict, matrix)
     }
 
     os.makedirs('logs', exist_ok=True)
