@@ -4,6 +4,7 @@ import functools
 import glob
 import itertools
 import os
+import operator
 import pickle
 import shutil
 import tempfile
@@ -505,7 +506,7 @@ def build(constraints, jobs, environment):
             _out=log_path,
             _err_to_out=True,
         )
-        tasks[package].append(task)
+        tasks[package].append((task, python, numpy))
 
     ntasks = sum(map(len, tasks.values()))
     built = itertools.count()
@@ -513,31 +514,56 @@ def build(constraints, jobs, environment):
     format_string = 'Built {{:{padding}d}}/{:{padding}d} packages'
     formatter = format_string.format(ntasks, padding=len(str(ntasks))).format
     animation = animated(formatter(first))
-    update_when_done = functools.partial(
-        update_animation,
-        animation,
-        formatter,
-        built,
-    )
 
     with open('.ordering', mode='rb') as f:
         ordering = pickle.load(f)
 
-    for package in ordering:  # TODO: parallelize on special versions
-        futures = []
+    errors = {}
+    with animation:
+        update_when_done = functools.partial(
+            update_animation,
+            animation,
+            formatter,
+            built,
+        )
 
         with thread_pool(tasks, max_workers=jobs) as executor:
-            for task in tasks[package]:
-                future = executor.submit(
-                    task, 'condaforge/linux-anvil', 'bash'
-                )
-                future.add_done_callback(update_when_done)
-                futures.append(future)
+            for package in ordering:  # TODO: parallelize on special versions
+                futures = {}
 
-            with animation:
-                for future in concurrent.futures.as_completed(futures):
+                for task, python, numpy in tasks[package]:
+                    future = executor.submit(
+                        task, 'condaforge/linux-anvil', 'bash'
+                    )
+                    future.add_done_callback(update_when_done)
+                    futures[future] = (package, python, numpy)
+
+                for future in concurrent.futures.as_completed(futures.keys()):
                     try:
                         future.result()
-                    except sh.ErrorReturnCode as e:
-                        click.get_binary_stream('stderr').write(e.stderr)
-                        raise SystemExit(e.exit_code)
+                    except Exception as e:
+                        failed_package = futures[future]
+                        errors[failed_package] = '{}: {}'.format(
+                            '-'.join(filter(None, failed_package)),
+                            str(e)
+                        )
+    if errors:
+        path = os.path.join('logs', 'errors.txt')
+        formatted_error_message = format_errors(errors)
+        with open(path, mode='w') as f:
+            f.write(formatted_error_message)
+        raise click.ClickException(
+            'Errors during build. See logs dir for details:\n{}'.format(
+                formatted_error_message
+            )
+        )
+
+
+def format_errors(errors):
+    key_names = '', 'python', 'numpy'
+    messages = [
+        '- {}'.format(
+            '/'.join(map(operator.add, key_names, filter(None, key)))
+        ) for key in errors.keys()
+    ]
+    return '\n'.join(messages)
