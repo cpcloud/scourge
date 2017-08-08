@@ -278,6 +278,7 @@ def init(package_specifications, image, artifact_directory):
 
     nx_graph = nx.DiGraph()
     for node, edges in graph.items():
+        nx_graph.add_node(node)
         for edge in edges:
             nx_graph.add_edge(edge, node)
     ordering = nx.topological_sort(nx_graph)
@@ -324,7 +325,7 @@ def clean():
                     '-e', 'HOST_USER_ID={:d}'.format(os.getuid()),
                     'condaforge/linux-anvil',
                     'bash',
-                    _in='rm -rf /artifacts/*',
+                    _in='rm -rf /artifacts/*; rm -rf /package_cache/*',
                 )
             except sh.ErrorReturnCode as e:
                 click.get_binary_stream('stderr').write(e.stderr)
@@ -349,6 +350,7 @@ def clean():
 
 
 SCRIPT = '\n'.join([
+    'conda config --add pkgs_dirs /package_cache',
     'conda clean --lock',
     'conda install --yes --quiet conda-forge-build-setup',
     'source run_conda_forge_build_setup',
@@ -465,6 +467,8 @@ def build(constraints, jobs, environment):
 
     matrices = dict(zip(metadata.keys(), results))
 
+    package_cache = tempfile.mkdtemp(prefix='scourge.build.')
+
     scripts = {
         (
             package,
@@ -474,6 +478,7 @@ def build(constraints, jobs, environment):
             package=package,
             python=constraints.get('python', '').replace('.', ''),
             numpy=constraints.get('numpy', '').replace('.', ''),
+            package_cache=package_cache,
         )
         for package, matrix in matrices.items()
         for constraints in map(dict, matrix)
@@ -487,10 +492,9 @@ def build(constraints, jobs, environment):
         '-a', 'stdin',
         '-a', 'stdout',
         '-a', 'stderr',
-        '-v', '{}:/artifacts'.format(
-            os.path.abspath(artifact_directory)
-        ),
+        '-v', '{}:/artifacts'.format(os.path.abspath(artifact_directory)),
         '-v', '{}:/recipes'.format(os.path.abspath(recipes_directory)),
+        '-v', '{}:/package_cache'.format(package_cache),
         '--dns', '8.8.8.8',
         '--dns', '8.8.4.4',
         '-e', 'HOST_USER_ID={:d}'.format(os.getuid()),
@@ -521,7 +525,8 @@ def build(constraints, jobs, environment):
         )
         tasks[package].append((task, python, numpy))
 
-    ntasks = sum(map(len, tasks.values()))
+    all_tasks = list(itertools.chain.from_iterable(tasks.values()))
+    ntasks = len(all_tasks)
     built = itertools.count()
     first = next(built)
     format_string = 'Built {{:{padding}d}}/{:{padding}d} packages'
@@ -540,7 +545,7 @@ def build(constraints, jobs, environment):
             built,
         )
 
-        with thread_pool(tasks, max_workers=jobs) as executor:
+        with thread_pool(all_tasks, max_workers=jobs) as executor:
             for package in ordering:  # TODO: parallelize on special versions
                 futures = {}
 
