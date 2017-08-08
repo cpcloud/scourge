@@ -199,8 +199,15 @@ def init(package_specifications, image, artifact_directory):
     try:
         sh.docker.pull(image, _out=click.get_binary_stream('stdout'))
     except sh.ErrorReturnCode as e:
-        click.get_binary_stream('stderr').write(e.stderr)
-        raise SystemExit(e.exit_code)
+        try:
+            result = sh.docker.images(image, quiet=True).splitlines()
+        except sh.ErrorReturnCode as e2:
+            click.get_binary_stream('stderr').write(e2.stderr)
+            raise SystemExit(e2.exit_code)
+        else:
+            if not result:
+                click.get_binary_stream('stderr').write(e.stderr)
+                raise SystemExit(e.exit_code)
 
     feedstocks = [
         'https://github.com/conda-forge/{}'.format(feedstock)
@@ -260,11 +267,6 @@ def init(package_specifications, image, artifact_directory):
         )
     }
 
-    for package, meta in metadata.items():
-        path = os.path.join(recipes_directory, package, 'meta.yaml')
-        with open(path, mode='wt') as f:
-            yaml.dump(meta.meta, f, default_flow_style=False)
-
     with open('.artifactdir', mode='wt') as f:
         f.write(os.path.abspath(artifact_directory))
 
@@ -272,7 +274,7 @@ def init(package_specifications, image, artifact_directory):
         f.write(os.path.abspath(recipes_directory))
 
     with open('.metadata', mode='wb') as f:
-        pickle.dump(package_metadata, f)
+        pickle.dump(metadata, f)
 
     nx_graph = nx.DiGraph()
     for node, edges in graph.items():
@@ -414,6 +416,22 @@ def build(constraints, jobs, environment):
             )
         )
 
+    # modify metadata to propagate envars
+    for key, values in environment.items():
+        for var in values:
+            name, _ = var.split('=', 1)
+            metadata[key].meta['build'].setdefault('script_env', []).append(
+                name
+            )
+
+    with open('.recipedir', mode='rt') as f:
+        recipes_directory = f.read().strip()
+
+    for package, meta in metadata.items():
+        path = os.path.join(recipes_directory, package, 'meta.yaml')
+        with open(path, mode='wt') as f:
+            yaml.dump(meta.meta, f, default_flow_style=False)
+
     if not constraints:
         constraints = 'python >=2.7,<3|>=3.4', 'numpy >=1.10', 'r-base >=3.3.2'
 
@@ -437,16 +455,6 @@ def build(constraints, jobs, environment):
     }
 
     get_version_matrix = toolz.flip(special_case_version_matrix)(index)
-
-    with open('.recipedir', mode='rt') as f:
-        recipes_directory = f.read().strip()
-
-    recipes = glob.glob(os.path.join(recipes_directory, '*'))
-
-    if not recipes:
-        raise click.ClickException(
-            'No recipes found in {}'.format(recipes_directory)
-        )
 
     with open('.artifactdir', mode='rt') as f:
         artifact_directory = f.read().strip()
