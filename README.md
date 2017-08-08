@@ -53,16 +53,12 @@ Options:
   -c, --constraints TEXT  Additional special software constraints - e.g.,
                           numpy/python.
   -e, --environment TEXT  Additional environment variables to pass to builds
-  -L, --use-local         Use builds that exist locally if possible. Note that
-                          this may slow down build times because packages must
-                          be built in topological order with this option set.
   -j, --jobs INTEGER      Number of workers to use for building
   -h, --help              Show this message and exit.
 ```
 
-**NOTE:** The ``--use-local`` flag is not yet implemented.
-
 
 ### * `scourge clean`
 
-This isn't necessary, but can be useful if you want to start from scratch.
+This is useful if you want to start from scratch. It removes everything in the
+directory where you ran `scourge init`/`scourge build`.
