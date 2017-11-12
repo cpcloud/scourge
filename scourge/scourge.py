@@ -104,8 +104,9 @@ def modify_metadata(meta, version, deps_to_build):
         'git_url': meta.get_value('about/home'),
         'git_rev': version,
     }
+    meta.meta['test'] = {'requires': ['cmake', 'gtest', 'gflags']}
     requirements = meta.meta['requirements']
-    build = requirements['build']
+    build = requirements['build'].extend(['gtest', 'gflags'])
     run = requirements['run']
 
     if deps_to_build:
@@ -357,7 +358,7 @@ SCRIPT = '\n'.join([
     (
         'CONDA_PY={python} CONDA_NPY={numpy} '
         'conda build /recipes/{package} --channel file:///artifacts '
-        '--output-folder /artifacts --quiet || exit 1'
+        '--output-folder /artifacts --quiet --no-remove-work-dir || exit 1'
     ),
 ])
 
