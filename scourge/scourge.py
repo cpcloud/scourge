@@ -5,24 +5,25 @@ import concurrent.futures
 import contextlib
 import functools
 import glob
+import heapq
 import itertools
-import os
 import operator
+import os
 import pickle
 import shutil
 import tempfile
 import threading
-import heapq
+import time
 
 from multiprocessing import cpu_count
 
 import click
-import sh
-import toolz
-import yaml
-import tqdm
 import decorating
 import networkx as nx
+import sh
+import toolz
+import tqdm
+import yaml
 
 from github import Github
 
@@ -197,11 +198,22 @@ def parse_package_branch(ctx, param, values):
     return branches
 
 
-def clone_and_checkout(url, branch=None):
-    sh.git.clone(url)
+def clone_and_checkout(url, branch=None, timeout=10):  # 10 second timeout
+    path = url.rsplit('/')[-1]
+    sh.git.clone(url, path)
+
+    sleep_interval = 0.05
+    duration = 0
+
+    while not os.path.exists(path) and duration <= timeout:
+        time.sleep(sleep_interval)
+        duration += sleep_interval
+
+    if not os.path.exists(path):
+        raise click.ClickException('Unable to clone {}'.format(url))
 
     if branch is not None:
-        with sh.pushd(url.rsplit('/')[-1]):
+        with sh.pushd(path):
             sh.git.checkout(branch)
 
 
@@ -228,7 +240,17 @@ def clone_and_checkout(url, branch=None):
     multiple=True,
     help='The conda-forge recipe branch to use for building a package.'
 )
-def init(package_specifications, image, artifact_directory, recipe_branch):
+@click.option(
+    '-t', '--recipe-clone-timeout',
+    type=int,
+    default=10,
+    help='Wait this long before failing when cloning recipes',
+)
+def init(package_specifications,
+         image,
+         artifact_directory,
+         recipe_branch,
+         recipe_clone_timeout):
     try:
         sh.docker.pull(image, _out=click.get_binary_stream('stdout'))
     except sh.ErrorReturnCode as e:
@@ -262,7 +284,8 @@ def init(package_specifications, image, artifact_directory, recipe_branch):
             executor.submit(
                 clone_and_checkout,
                 feedstock,
-                recipe_branch.get(spec, None)
+                recipe_branch.get(spec, None),
+                timeout=recipe_clone_timeout,
             ) for feedstock, spec in zip(feedstocks, package_specifications)
         ]
 
