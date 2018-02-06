@@ -1,3 +1,6 @@
+"""Scourge of the open sources
+"""
+
 import concurrent.futures
 import contextlib
 import functools
@@ -181,6 +184,27 @@ def latestrel(repo, sha):
     click.echo(get_latestrel(repo, sha))
 
 
+def parse_package_branch(ctx, param, values):
+    branches = {}
+
+    for value in values:
+        try:
+            package, branch = value.split(':')
+        except Exception as e:
+            raise click.ClickException(str(e))
+        branches[package] = branch
+
+    return branches
+
+
+def clone_and_checkout(url, branch=None):
+    sh.git.clone(url)
+
+    if branch is not None:
+        with sh.pushd(url.rsplit('/')[-1]):
+            sh.git.checkout(branch)
+
+
 @cli.command(help='Pull in the conda forge docker image and clone feedstocks.')
 @click.argument(
     'package_specifications', callback=parse_git_version_spec, nargs=-1)
@@ -195,7 +219,16 @@ def latestrel(repo, sha):
     type=click.Path(),
     help='The location to place tarballs upon a successful build.',
 )
-def init(package_specifications, image, artifact_directory):
+@click.option(
+    '-r',
+    '--recipe-branch',
+    required=False,
+    default={},
+    callback=parse_package_branch,
+    multiple=True,
+    help='The conda-forge recipe branch to use for building a package.'
+)
+def init(package_specifications, image, artifact_directory, recipe_branch):
     try:
         sh.docker.pull(image, _out=click.get_binary_stream('stdout'))
     except sh.ErrorReturnCode as e:
@@ -226,8 +259,11 @@ def init(package_specifications, image, artifact_directory):
 
     with thread_pool(package_specifications) as executor:
         futures = [
-            executor.submit(sh.git.clone, feedstock)
-            for feedstock in feedstocks
+            executor.submit(
+                clone_and_checkout,
+                feedstock,
+                recipe_branch.get(spec, None)
+            ) for feedstock, spec in zip(feedstocks, package_specifications)
         ]
 
         for future in progress(concurrent.futures.as_completed(futures)):
@@ -281,7 +317,7 @@ def init(package_specifications, image, artifact_directory):
         nx_graph.add_node(node)
         for edge in edges:
             nx_graph.add_edge(edge, node)
-    ordering = nx.topological_sort(nx_graph)
+    ordering = list(nx.topological_sort(nx_graph))
 
     with open('.ordering', mode='wb') as f:
         pickle.dump(ordering, f)
