@@ -280,11 +280,14 @@ def init(package_specifications, image, artifact_directory):
     for node, edges in graph.items():
         nx_graph.add_node(node)
         for edge in edges:
-            nx_graph.add_edge(edge, node)
-    ordering = nx.topological_sort(nx_graph)
+            nx_graph.add_edge(node, edge)
+    ordering = nx.topological_sort(nx_graph)[::-1]
 
     with open('.ordering', mode='wb') as f:
         pickle.dump(ordering, f)
+
+    with open('.graph', mode='wb') as f:
+        pickle.dump(nx_graph, f)
 
 
 def get_tarballs(artifacts):
@@ -467,6 +470,10 @@ def build(constraints, jobs, environment):
 
     matrices = dict(zip(metadata.keys(), results))
 
+    with open('.matrices', mode='wb') as f:
+        pickle.dump(matrices, f)
+
+    return
     package_cache = tempfile.mkdtemp(prefix='scourge.build.')
 
     scripts = {
