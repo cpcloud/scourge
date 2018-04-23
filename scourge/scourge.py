@@ -526,7 +526,8 @@ def build(constraints, jobs, environment):
 
     matrices = dict(zip(metadata.keys(), results))
 
-    package_cache = tempfile.mkdtemp(prefix='scourge.build.')
+    package_cache_dir = tempfile.TemporaryDirectory(prefix='scourge.build.')
+    package_cache = package_cache_dir.name
 
     scripts = {
         (
